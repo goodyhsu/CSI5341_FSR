@@ -2,10 +2,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
-import torch.nn.functional as F
 
-import torchvision
-import torchvision.transforms as transforms
 
 from models.resnet_fsr import ResNet18_FSR
 from models.vgg_fsr import vgg16_FSR
@@ -14,9 +11,10 @@ from models.wideresnet34_fsr import WideResNet34_FSR
 from attacks.pgd import PGD
 
 from tqdm.auto import tqdm
-
 import argparse
 import os
+
+from datasets import available_datasets
 
 
 def boolean_string(s):
@@ -43,51 +41,33 @@ args = parser.parse_args()
 device = 'cuda:{}'.format(args.device) if torch.cuda.is_available() else 'cpu'
 start_epoch = 1
 
-if args.dataset == 'cifar10':
-    num_classes = 10
-    image_size = (32, 32)
-    transform_train = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Lambda(lambda x: F.pad(x.unsqueeze(0),
-                                          (4, 4, 4, 4), mode='constant', value=0).squeeze()),
-        transforms.ToPILImage(),
-        transforms.RandomCrop(32),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-    ])
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-    ])
+dataset = available_datasets[args.dataset](args)
+(num_classes, image_size, transform_train, transform_test,
+ trainloader, testloader, trainset, testset) = dataset.get_dataset()
 
-    trainset = torchvision.datasets.CIFAR10(
-        root='./data', train=True, download=True, transform=transform_train)
-    trainloader = torch.utils.data.DataLoader(
-        trainset, batch_size=args.bs, shuffle=True)
 
-    testset = torchvision.datasets.CIFAR10(
-        root='./data', train=False, download=True, transform=transform_test)
-    testloader = torch.utils.data.DataLoader(
-        testset, batch_size=args.bs, shuffle=False)
+# elif args.dataset == 'svhn':
+#     num_classes = 10
+#     image_size = (32, 32)
+#     transform_train = transforms.Compose([
+#         transforms.ToTensor(),
+#     ])
+#     transform_test = transforms.Compose([
+#         transforms.ToTensor(),
+#     ])
 
-elif args.dataset == 'svhn':
-    num_classes = 10
-    image_size = (32, 32)
-    transform_train = transforms.Compose([
-        transforms.ToTensor(),
-    ])
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-    ])
+#     trainset = torchvision.datasets.SVHN(
+#         root='./data', split='train', download=True, transform=transform_train)
+#     trainloader = torch.utils.data.DataLoader(
+#         trainset, batch_size=args.bs, shuffle=True)
 
-    trainset = torchvision.datasets.SVHN(
-        root='./data', split='train', download=True, transform=transform_train)
-    trainloader = torch.utils.data.DataLoader(
-        trainset, batch_size=args.bs, shuffle=True)
+#     testset = torchvision.datasets.SVHN(
+#         root='./data', split='test', download=True, transform=transform_test)
+#     testloader = torch.utils.data.DataLoader(
+#         testset, batch_size=args.bs, shuffle=False)
 
-    testset = torchvision.datasets.SVHN(
-        root='./data', split='test', download=True, transform=transform_test)
-    testloader = torch.utils.data.DataLoader(
-        testset, batch_size=args.bs, shuffle=False)
+
+# TODO: write logs to file
 
 models = {
     'resnet18': ResNet18_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
