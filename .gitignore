@@ -1,0 +1,6 @@
+data/
+weights/
+__pycache__/
+
+# For conda environment
+*.yml 
