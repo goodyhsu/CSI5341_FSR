@@ -3,7 +3,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 
-
 from models.resnet_fsr import ResNet18_FSR
 from models.vgg_fsr import vgg16_FSR
 from models.wideresnet34_fsr import WideResNet34_FSR
@@ -15,6 +14,7 @@ import argparse
 import os
 
 from datasets import available_datasets
+import logging
 
 
 def boolean_string(s):
@@ -37,6 +37,18 @@ parser.add_argument('--alpha', type=float, default=0.25, help='step size alpha')
 parser.add_argument('--tau', type=float, default=0.1, help='tau for Gumbel softmax')
 parser.add_argument('--device', type=int, help='device id')
 args = parser.parse_args()
+
+# Write logs to file
+if not os.path.exists('./logs/'):
+    os.makedirs('./logs/')
+log_file = './logs/{}.txt'.format(args.save_name)
+logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger()
+
+logger.info("Training Configuration:")
+for arg, value in vars(args).items():
+    logger.info(f'{arg}: {value}')
+
 
 device = 'cuda:{}'.format(args.device) if torch.cuda.is_available() else 'cpu'
 start_epoch = 1
@@ -67,8 +79,6 @@ dataset = available_datasets[args.dataset](args)
 #         testset, batch_size=args.bs, shuffle=False)
 
 
-# TODO: write logs to file
-
 models = {
     'resnet18': ResNet18_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
     'vgg16': vgg16_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
@@ -83,6 +93,7 @@ cudnn.benchmark = True
 
 criterion = nn.CrossEntropyLoss(reduction='mean')
 optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=5e-4)
+
 
 
 def get_pred(out, labels):
@@ -169,6 +180,13 @@ def train(epoch):
                 Adv_Acc='{:.3f}%'.format(100. * adv_correct / total),
             )
             _tqdm.update(inputs.shape[0])
+            
+    log_msg = ('Epoch: %d, Adv_Loss: %.3f, Sep_Loss: %.3f, Rec_Loss: %.3f, '
+                'Adv_Acc: %.3f%%' % (epoch, adv_cls_losses / len(trainloader),
+                                    sep_losses / len(trainloader),
+                                    rec_losses / len(trainloader),
+                                    100. * adv_correct / total))
+    logging.info(log_msg)
 
 
 def test(epoch):
@@ -208,6 +226,14 @@ def test(epoch):
             )
             _tqdm.update(inputs.shape[0])
 
+    log_msg = ('Epoch: %d, Ori_Loss: %.3f, Ori_Acc: %.3f%%, '
+                'Adv_Loss: %.3f, Adv_Acc: %.3f%%' % (epoch,
+                                                    ori_test_loss/len(testloader),
+                                                    100.*ori_correct/total,
+                                                    adv_test_loss/len(testloader),
+                                                    100.*adv_correct/total))
+    logging.info(log_msg)
+    
     if not os.path.exists('./weights/{}/{}/'.format(args.dataset, args.model)):
         os.makedirs('./weights/{}/{}/'.format(args.dataset, args.model))
     torch.save(net.state_dict(), './weights/{}/{}/{}.pth'.format(args.dataset, args.model, args.save_name))
