@@ -6,6 +6,7 @@ from PIL import Image
 import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
+from .base_dataset import BaseDataset
 
 class TimgNet(BaseDataset):
     def __init__(self, root_dir, transform=None, train=True):
