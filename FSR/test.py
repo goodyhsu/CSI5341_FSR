@@ -15,6 +15,8 @@ import torchvision
 import torchvision.transforms as transforms
 
 from models.BaseModel import BaseModelDNN
+from datasets import available_datasets
+import logging
 
 
 def boolean_string(s):
@@ -30,8 +32,19 @@ parser.add_argument('--dataset', default='cifar10')
 parser.add_argument('--tau', default=0.1, type=float)
 parser.add_argument('--bs', default=128, type=int, help='batch size')
 parser.add_argument('--device', default=0, type=int)
-
 args = parser.parse_args()
+
+# Write logs to file
+if not os.path.exists('./logs/'):
+    os.makedirs('./logs/')
+log_file = './logs/{}_test.txt'.format(args.load_name)
+logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger()
+
+logger.info("Test Configuration:")
+for arg, value in vars(args).items():
+    logger.info(f'{arg}: {value}')
+    
 
 device = 'cuda:{}'.format(args.device) if torch.cuda.is_available() else 'cpu'
 
@@ -48,24 +61,9 @@ elif args.model == 'wideresnet34':
     from models.wideresnet34_fsr import WideResNet34_FSR
     net = WideResNet34_FSR
 
-if args.dataset == 'cifar10':
-    image_size = (32, 32)
-    num_classes = 10
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-    ])
-    testset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform_test)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=args.bs, shuffle=False)
-
-elif args.dataset == 'svhn':
-    image_size = (32, 32)
-    num_classes = 10
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-    ])
-    testset = torchvision.datasets.SVHN(root='./data', split='test', download=True, transform=transform_test)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=args.bs, shuffle=False)
-
+dataset = available_datasets[args.dataset](args)
+(num_classes, image_size,
+    trainloader, testloader, trainset, testset) = dataset.get_dataset()
 
 
 def get_pred(out, labels):
@@ -148,23 +146,20 @@ def main():
     attack_results = []
     for attack_class, attack_kwargs, name in lst_attack:
         from metric.classification import defense_success_rate
-
+        print(f'Processing {name} attack...')
         message, defense_success, natural_success = defense_success_rate(model.predict,
                                                                          testloader, attack_class,
                                                                          attack_kwargs, device=device)
 
         message = name + ': ' + message
-        print(message)
+        logger.info(message)
         attack_results.append(defense_success)
     attack_results.append(natural_success)
     attack_results = torch.cat(attack_results, 1)
     attack_results = attack_results.sum(1)
-    attack_results[attack_results < len(lst_attack) + 1] = 0.
-    if args.dataset == 'cifar10':
-        print('Ensemble : {:.2f}%'.format(100. * attack_results.count_nonzero() / 10000.))
-    elif args.dataset == 'svhn':
-        print('Ensemble : {:.2f}%'.format(100. * attack_results.count_nonzero() / 26032.))
-
+    attack_results[attack_results < len(lst_attack) + 1] = 0. # The defense is considered successful only if all attacks failed
+    logger.info('Ensemble : {:.2f}%'.format(100. * attack_results.count_nonzero() / len(testset))
+                + ' ({}/{})'.format(attack_results.count_nonzero(), len(testset)))
 
 if __name__ == '__main__':
     main()

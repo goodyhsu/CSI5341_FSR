@@ -5,6 +5,7 @@ CIFS : https://github.com/HanshuYAN/CIFS
 
 
 import torch
+from tqdm import tqdm
 
 
 def defense_success_rate(predict, loader, attack_class, attack_kwargs,
@@ -29,7 +30,7 @@ def attack_mini_batches(predict, adversary, loader, device="cuda", num_batch=Non
     lst_advpred = []
 
     idx_batch = 0
-    for data, label in loader:
+    for data, label in tqdm(loader):
         data, label = data.to(device), label.to(device)
         adv = adversary.perturb(data, label)
         
