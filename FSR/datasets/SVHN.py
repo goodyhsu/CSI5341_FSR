@@ -26,6 +26,5 @@ class SVHN(BaseDataset):
         
     def get_dataset(self):
         return (self.num_classes, self.image_size, 
-                self.transform_train, self.transform_test,
                 self.trainloader, self.testloader, 
                 self.trainset, self.testset)

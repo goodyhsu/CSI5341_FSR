@@ -54,30 +54,8 @@ device = 'cuda:{}'.format(args.device) if torch.cuda.is_available() else 'cpu'
 start_epoch = 1
 
 dataset = available_datasets[args.dataset](args)
-(num_classes, image_size, transform_train, transform_test,
+(num_classes, image_size,
  trainloader, testloader, trainset, testset) = dataset.get_dataset()
-
-
-# elif args.dataset == 'svhn':
-#     num_classes = 10
-#     image_size = (32, 32)
-#     transform_train = transforms.Compose([
-#         transforms.ToTensor(),
-#     ])
-#     transform_test = transforms.Compose([
-#         transforms.ToTensor(),
-#     ])
-
-#     trainset = torchvision.datasets.SVHN(
-#         root='./data', split='train', download=True, transform=transform_train)
-#     trainloader = torch.utils.data.DataLoader(
-#         trainset, batch_size=args.bs, shuffle=True)
-
-#     testset = torchvision.datasets.SVHN(
-#         root='./data', split='test', download=True, transform=transform_test)
-#     testloader = torch.utils.data.DataLoader(
-#         testset, batch_size=args.bs, shuffle=False)
-
 
 models = {
     'resnet18': ResNet18_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
