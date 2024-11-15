@@ -33,11 +33,12 @@ parser.add_argument('--tau', default=0.1, type=float)
 parser.add_argument('--bs', default=128, type=int, help='batch size')
 parser.add_argument('--device', default=0, type=int)
 args = parser.parse_args()
+print(f'====== Testing {args.load_name} on {args.dataset} dataset ======')
 
 # Write logs to file
-if not os.path.exists('./logs/'):
-    os.makedirs('./logs/')
-log_file = './logs/{}_test.txt'.format(args.load_name)
+if not os.path.exists('./logs/test'):
+    os.makedirs('./logs/test')
+log_file = f'./logs/test/train_{args.load_name}_test_{args.dataset}.txt'
 logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger()
 
