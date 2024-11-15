@@ -32,13 +32,16 @@ parser.add_argument('--dataset', default='cifar10')
 parser.add_argument('--tau', default=0.1, type=float)
 parser.add_argument('--bs', default=128, type=int, help='batch size')
 parser.add_argument('--device', default=0, type=int)
+parser.add_argument('--backbone_weights', type=str, help='path to backbone weights')
+parser.add_argument('--fsr_weights', type=str, help='path to FSR weights')
 args = parser.parse_args()
-print(f'====== Testing {args.load_name} on {args.dataset} dataset ======')
 
 # Write logs to file
+backbone_name = args.backbone_weights.split('/')[-1].split('_')[0]
+fsr_name = args.fsr_weights.split('/')[-1].split('_')[0]
 if not os.path.exists('./logs/test'):
     os.makedirs('./logs/test')
-log_file = f'./logs/test/train_{args.load_name}_test_{args.dataset}.txt'
+log_file = f'./logs/test/bb_{backbone_name}_fsr_{fsr_name}.txt'
 logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger()
 
@@ -114,14 +117,44 @@ class Classifier(BaseModelDNN):
         self.net = net(tau=args.tau, num_classes=num_classes, image_size=image_size).to(device)
         self.set_requires_grad([self.net], False)
 
+    def load(self, args):
+        checkpoint = torch.load('./weights/{}/{}/{}.pth'.format(args.dataset, args.model, args.load_name), map_location=device)
+        self.net.load_state_dict(checkpoint)
+    
     def predict(self, x, is_eval=True):
         return self.net(x, is_eval=is_eval)
 
+class TransferClassifier(BaseModelDNN):
+    # Model for transfer learning, the backbone & FSR module might be trained on different datasets
+    def __init__(self):
+        super(BaseModelDNN).__init__()
+        self.net = net(tau=args.tau, num_classes=num_classes, image_size=image_size).to(device)
+        self.set_requires_grad([self.net], False)
+        
+    def load(self, args):
+        print(f'Loading model with backbone: {args.backbone_weights} and FSR: {args.fsr_weights}')
+        backbone_checkpoint = torch.load(args.backbone_weights, map_location=device)
+        self.net.load_state_dict(backbone_checkpoint)
+        
+        # Replace the FSR module
+        fsr_checkpoint = torch.load(args.fsr_weights, map_location=device)
+        fsr_state_dict = {
+            k.replace('fsr.', ''): v
+            for k, v in fsr_checkpoint.items()
+            if k.startswith('fsr.')
+        }
+
+        self.net.fsr.load_state_dict(fsr_state_dict)
+
+    def predict(self, x, is_eval=True):
+        return self.net(x, is_eval=is_eval)
+        
+
 
 def main():
-    model = Classifier()
-    checkpoint = torch.load('./weights/{}/{}/{}.pth'.format(args.dataset, args.model, args.load_name, map_location=device))
-    model.net.load_state_dict(checkpoint)
+    # model = Classifier()
+    model = TransferClassifier()
+    model.load(args)
     model.net.eval()
 
     from advertorch_fsr.attacks import FGSM, LinfPGDAttack
@@ -161,6 +194,8 @@ def main():
     attack_results[attack_results < len(lst_attack) + 1] = 0. # The defense is considered successful only if all attacks failed
     logger.info('Ensemble : {:.2f}%'.format(100. * attack_results.count_nonzero() / len(testset))
                 + ' ({}/{})'.format(attack_results.count_nonzero(), len(testset)))
+    
+    print(f'Results saved to {log_file}.')
 
 if __name__ == '__main__':
     main()

@@ -110,6 +110,24 @@ class Bottleneck(nn.Module):
         return out
 
 
+class FSR(nn.Module):
+    def __init__(self, separation, recalibration):
+        super(FSR, self).__init__()
+        self.separation = separation
+        self.recalibration = recalibration
+        
+    def forward(self, out, is_eval=False):
+        r_feat, nr_feat, mask = self.separation(out, is_eval=is_eval)
+        rec_feat = self.recalibration(nr_feat, mask)
+        out = r_feat + rec_feat
+
+        out = nn.AdaptiveAvgPool2d(1)(out)
+        out = out.view(out.size(0), -1)        
+        
+        return out, r_feat, nr_feat, rec_feat
+        
+
+
 class ResNet(nn.Module):
     def __init__(self, block, num_blocks, num_classes=10, tau=0.1, image_size=(32, 32)):
         super(ResNet, self).__init__()
@@ -127,8 +145,14 @@ class ResNet(nn.Module):
         self.separation = Separation(size=(512, int(self.image_size[0] / 8), int(self.image_size[1] / 8)), tau=self.tau)
         self.recalibration = Recalibration(size=(512, int(self.image_size[0] / 8), int(self.image_size[1] / 8)))
         self.aux = nn.Sequential(nn.Linear(512, num_classes))
+        self.fsr = FSR(self.separation, self.recalibration)
 
-        self.linear = nn.Linear(512 * block.expansion, num_classes)
+        # Modify the original code
+        self.tranfer_trainable_layer = nn.Linear(512*block.expansion, 128)
+        self.linear = nn.Linear(128, num_classes)
+        
+        
+        # self.linear = nn.Linear(512 * block.expansion, num_classes)
 
     def _make_layer(self, block, planes, num_blocks, stride):
         strides = [stride] + [1] * (num_blocks - 1)
@@ -148,21 +172,34 @@ class ResNet(nn.Module):
         out = self.layer2(out)
         out = self.layer3(out)
         out = self.layer4(out)
-
-        r_feat, nr_feat, mask = self.separation(out, is_eval=is_eval)
+        
+        # Modified from the original code
+        out, r_feat, nr_feat, rec_feat = self.fsr(out, is_eval=is_eval)
         r_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(r_feat).reshape(r_feat.shape[0], -1))
-        r_outputs.append(r_out)
         nr_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(nr_feat).reshape(nr_feat.shape[0], -1))
+        rec_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(rec_feat).reshape(rec_feat.shape[0], -1))        
+        r_outputs.append(r_out)
         nr_outputs.append(nr_out)
-
-        rec_feat = self.recalibration(nr_feat, mask)
-        rec_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(rec_feat).reshape(rec_feat.shape[0], -1))
         rec_outputs.append(rec_out)
+        
+        out = self.tranfer_trainable_layer(out)
 
-        out = r_feat + rec_feat
+        # r_feat, nr_feat, mask = self.separation(out, is_eval=is_eval)
+        # r_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(r_feat).reshape(r_feat.shape[0], -1))
+        # r_outputs.append(r_out)
+        # nr_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(nr_feat).reshape(nr_feat.shape[0], -1))
+        # nr_outputs.append(nr_out)
 
-        out = nn.AdaptiveAvgPool2d(1)(out)
-        out = out.view(out.size(0), -1)
+        # rec_feat = self.recalibration(nr_feat, mask)
+        # rec_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(rec_feat).reshape(rec_feat.shape[0], -1))
+        # rec_outputs.append(rec_out)
+
+        # out = r_feat + rec_feat
+
+        # out = nn.AdaptiveAvgPool2d(1)(out)
+        # out = out.view(out.size(0), -1)
+        
+        
         out = self.linear(out)
 
         return out, r_outputs, nr_outputs, rec_outputs

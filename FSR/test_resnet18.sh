@@ -1,9 +1,13 @@
+python test.py --load_name cifar10_resnet18 --dataset cifar10 --model resnet18 --device 7 \
+--backbone_weights ./weights/cifar10/resnet18/cifar10_resnet18_fsrTest.pth \
+--fsr_weights ./weights/cifar100/resnet18/cifar100_resnet18_fsrTest.pth
+
 
 # Source data: cifar10
-python test.py --load_name cifar10_resnet18 --dataset cifar10 --model resnet18 --device 7
-python test.py --load_name cifar10_resnet18 --dataset cifar100 --model resnet18 --device 7
+# python test.py --load_name cifar10_resnet18 --dataset cifar10 --model resnet18 --device 7
+# python test.py --load_name cifar10_resnet18 --dataset cifar100 --model resnet18 --device 7
 # python test.py --load_name cifar10_resnet18 --dataset svhn --model resnet18 --device 7
-python test.py --load_name cifar10_resnet18 --dataset mnist --model resnet18 --device 7
+# python test.py --load_name cifar10_resnet18 --dataset mnist --model resnet18 --device 7
 # python test.py --load_name cifar10_resnet18 --dataset tinyimg --model resnet18 --device 7
 
 # # Source data: cifar100
