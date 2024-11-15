@@ -15,12 +15,12 @@ class SVHN(BaseDataset):
         transforms.ToTensor(),])
 
         self.trainset = torchvision.datasets.SVHN(
-            root='./data', split='train', download=True, transform=transform_train)
+            root='./data', split='train', download=True, transform=self.transform_train)
         self.trainloader = torch.utils.data.DataLoader(
             self.trainset, batch_size=args.bs, shuffle=True)
 
         self.testset = torchvision.datasets.SVHN(
-            root='./data', split='test', download=True, transform=transform_test)
+            root='./data', split='test', download=True, transform=self.transform_test)
         self.testloader = torch.utils.data.DataLoader(
             self.testset, batch_size=args.bs, shuffle=False)
         
