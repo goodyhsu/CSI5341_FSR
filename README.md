@@ -2,7 +2,7 @@
 
 ## Performance of Different Backbones / FSR
 Row: backbone, column: FSR.
-The values in the cells are in the represented as average accuracies using 4 different adversarial attack schemes.
+The values in the cells are represented as original accuracies / average accuracies using 4 different adversarial attack schemes.
 
 |          | CIFAR10  | CIFAR100 | MNIST    | SVHN     |TinyImageNet |
 |----------|----------|----------|----------|----------|----------|
