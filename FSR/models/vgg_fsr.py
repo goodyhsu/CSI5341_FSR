@@ -60,6 +60,19 @@ class Recalibration(nn.Module):
 
         return rec_feat
 
+# modified: add FSR module
+class FSR(nn.Module):
+    def __init__(self, separation, recalibration):
+        super(FSR, self).__init__()
+        self.separation = separation
+        self.recalibration = recalibration
+        
+    def forward(self, x, is_eval=False):
+        r_feat, nr_feat, mask = self.separation(x, is_eval=is_eval)
+        rec_feat = self.recalibration(nr_feat, mask)
+        x = r_feat + rec_feat
+           
+        return x, r_feat, nr_feat, rec_feat
 
 class VGG(nn.Module):
     def __init__(self, features, num_classes=10, init_weights=True, tau=0.1, image_size=(32, 32)):
@@ -82,6 +95,11 @@ class VGG(nn.Module):
         self.recalibration = Recalibration(size=(512, int(self.image_size[0] / 8), int(self.image_size[1] / 8)))
         self.aux = nn.Sequential(nn.Linear(512, num_classes))
 
+        # modified: add fsr module and transfer trainable layer
+        self.fsr = FSR(self.separation, self.recalibration)
+        self.tranfer_trainable_layer = nn.Linear(512, 128)
+        self.linear = nn.Linear(128, num_classes)
+
         if init_weights:
             self._initialize_weights()
 
@@ -98,17 +116,28 @@ class VGG(nn.Module):
         x = self.pool2(x)
         x = self.block3(x)
 
-        r_feat, nr_feat, mask = self.separation(x, is_eval=is_eval)
+        # modified: 
+        x, r_feat, nr_feat, rec_feat = self.fsr(x, is_eval=is_eval)
         r_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(r_feat).reshape(r_feat.shape[0], -1))
-        r_outputs.append(r_out)
         nr_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(nr_feat).reshape(nr_feat.shape[0], -1))
+        rec_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(rec_feat).reshape(rec_feat.shape[0], -1))        
+        r_outputs.append(r_out)
         nr_outputs.append(nr_out)
-
-        rec_feat = self.recalibration(nr_feat, mask)
-        rec_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(rec_feat).reshape(rec_feat.shape[0], -1))
         rec_outputs.append(rec_out)
+        
+        x = self.tranfer_trainable_layer(x)
 
-        x = r_feat + rec_feat
+        # r_feat, nr_feat, mask = self.separation(x, is_eval=is_eval)
+        # r_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(r_feat).reshape(r_feat.shape[0], -1))
+        # r_outputs.append(r_out)
+        # nr_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(nr_feat).reshape(nr_feat.shape[0], -1))
+        # nr_outputs.append(nr_out)
+
+        # rec_feat = self.recalibration(nr_feat, mask)
+        # rec_out = self.aux(torch.nn.AdaptiveAvgPool2d(1)(rec_feat).reshape(rec_feat.shape[0], -1))
+        # rec_outputs.append(rec_out)
+
+        # x = r_feat + rec_feat
 
         x = self.pool3(x)
         x = self.block4(x)
