@@ -6,6 +6,7 @@ import torch.backends.cudnn as cudnn
 from models.resnet_fsr import ResNet18_FSR
 from models.vgg_fsr import vgg16_FSR
 from models.wideresnet34_fsr import WideResNet34_FSR
+from models.TransferClassifier import TransferClassifier
 
 from attacks.pgd import PGD
 
@@ -15,6 +16,7 @@ import os
 
 from datasets import available_datasets
 import logging
+
 
 
 def boolean_string(s):
@@ -36,12 +38,17 @@ parser.add_argument('--eps', type=float, default=8., help='perturbation constrai
 parser.add_argument('--alpha', type=float, default=0.25, help='step size alpha')
 parser.add_argument('--tau', type=float, default=0.1, help='tau for Gumbel softmax')
 parser.add_argument('--device', type=int, help='device id')
+
+### Arguments for transfer learning
+parser.add_argument('--transfer_learning', action='store_true', help='train the last layer of FSR only')
+parser.add_argument('--backbone_weights', type=str, help='path to backbone weights')
+parser.add_argument('--fsr_weights', type=str, help='path to FSR weights')
 args = parser.parse_args()
 
 # Write logs to file
-if not os.path.exists('./logs/'):
-    os.makedirs('./logs/')
-log_file = './logs/{}.txt'.format(args.save_name)
+if not os.path.exists('./logs/train'):
+    os.makedirs('./logs/train')
+log_file = './logs/train/{}.txt'.format(args.save_name)
 logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(message)s')
 logger = logging.getLogger()
 
@@ -57,14 +64,27 @@ dataset = available_datasets[args.dataset](args)
 (num_classes, image_size,
  trainloader, testloader, trainset, testset) = dataset.get_dataset()
 
+# models = {
+#     'resnet18': ResNet18_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
+#     'vgg16': vgg16_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
+#     'wideresnet34': WideResNet34_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
+# }
 models = {
-    'resnet18': ResNet18_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
-    'vgg16': vgg16_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
-    'wideresnet34': WideResNet34_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
+    'resnet18': ResNet18_FSR,
+    'vgg16': vgg16_FSR,
+    'wideresnet34': WideResNet34_FSR,
 }
 
 model_name = args.model
 net = models[model_name]
+
+# Transfer learning
+if args.transfer_learning:
+    classifier = TransferClassifier(args=args, num_classes=num_classes, image_size=image_size, net=net, device=device)
+    classifier.load(args)
+    classifier.set_requires_grad([classifier.net.tranfer_trainable_layer], True)
+    net = classifier.net
+
 net = net.to(device)
 cudnn.benchmark = True
 
