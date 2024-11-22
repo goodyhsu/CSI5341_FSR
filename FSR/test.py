@@ -11,11 +11,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-import torchvision
-import torchvision.transforms as transforms
+from models.WholeClassifier import WholeClassifier
+from models.SeparateClassifier import SeparateClassifier
+from models.resnet_fsr import ResNet18_FSR
+from models.vgg_fsr import vgg16_FSR
+from models.wideresnet34_fsr import WideResNet34_FSR
 
-from models.BaseModel import BaseModelDNN
-from models.TransferClassifier import TransferClassifier
 from datasets import available_datasets
 import logging
 
@@ -25,51 +26,46 @@ def boolean_string(s):
         raise ValueError('Not a valid boolean string')
     return s == 'True'
 
-
-parser = argparse.ArgumentParser(description='Configuration')
-parser.add_argument('--load_name', type=str, help='specify checkpoint load name')
-parser.add_argument('--model', default='resnet18')
-parser.add_argument('--dataset', default='cifar10')
-parser.add_argument('--tau', default=0.1, type=float)
-parser.add_argument('--bs', default=128, type=int, help='batch size')
-parser.add_argument('--device', default=0, type=int)
-parser.add_argument('--backbone_weights', type=str, help='path to backbone weights')
-parser.add_argument('--fsr_weights', type=str, help='path to FSR weights')
-args = parser.parse_args()
-
-# Write logs to file
-backbone_name = args.backbone_weights.split('/')[-1].split('_')[0]
-fsr_name = args.fsr_weights.split('/')[-1].split('_')[0]
-if not os.path.exists('./logs/test'):
-    os.makedirs('./logs/test')
-log_file = f'./logs/test/bb_{backbone_name}_fsr_{fsr_name}.txt'
-logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(message)s')
-logger = logging.getLogger()
-
-logger.info("Test Configuration:")
-for arg, value in vars(args).items():
-    logger.info(f'{arg}: {value}')
+def get_arguments():
+    parser = argparse.ArgumentParser(description='Configuration')
+    parser.add_argument('--load_name', type=str, help='specify checkpoint load name')
+    parser.add_argument('--model', default='resnet18')
+    parser.add_argument('--dataset', default='cifar10')
+    parser.add_argument('--tau', default=0.1, type=float)
+    parser.add_argument('--bs', default=128, type=int, help='batch size')
+    parser.add_argument('--device', default=0, type=int)
+    parser.add_argument('--backbone_weights', type=str, help='path to backbone weights')
+    parser.add_argument('--fsr_weights', type=str, help='path to FSR weights')
+    # Transfer learning arguments
+    parser.add_argument('--transfer_learning', action='store_true', help='evaluate the trained transfer learning model')
+    parser.add_argument('--transfer_weights', type=str, help='path to transfer learning model weights')
+    args = parser.parse_args()
     
+    if not args.transfer_learning:
+        assert args.backbone_weights is not None, 'Please provide the backbone weights for non-transfer learning'
+        assert args.fsr_weights is not None, 'Please provide the FSR weights for non-transfer learning'
+    else:
+        assert args.transfer_weights is not None, 'Please provide the transfer model weights for transfer learning'
+    
+    return args
 
-device = 'cuda:{}'.format(args.device) if torch.cuda.is_available() else 'cpu'
-
-
-if args.model == 'resnet18':
-    from models.resnet_fsr import ResNet18_FSR
-    net = ResNet18_FSR
-
-elif args.model == 'vgg16':
-    from models.vgg_fsr import vgg16_FSR
-    net = vgg16_FSR
-
-elif args.model == 'wideresnet34':
-    from models.wideresnet34_fsr import WideResNet34_FSR
-    net = WideResNet34_FSR
-
-dataset = available_datasets[args.dataset](args)
-(num_classes, image_size,
-    trainloader, testloader, trainset, testset) = dataset.get_dataset()
-
+def set_logger(args):
+    if not os.path.exists('./logs/test'):
+        os.makedirs('./logs/test')
+    if args.transfer_learning:
+        log_file = f'./logs/test/trsf_{args.transfer_weights.split("/")[-1].split("_")[0]}.txt'
+    else:
+        backbone_name = args.backbone_weights.split('/')[-1].split('_')[0]
+        fsr_name = args.fsr_weights.split('/')[-1].split('_')[0]
+        log_file = f'./logs/test/bb_{backbone_name}_fsr_{fsr_name}.txt'
+    
+    logging.basicConfig(filename=log_file, level=logging.INFO, format='%(asctime)s - %(message)s')
+    logger = logging.getLogger()
+    logger.info("Test Configuration:")
+    for arg, value in vars(args).items():
+        logger.info(f'{arg}: {value}')
+        
+    return logger, log_file
 
 def get_pred(out, labels):
     pred = out.sort(dim=-1, descending=True)[1][:, 0]
@@ -90,9 +86,10 @@ class CE_loss(nn.Module):
 
 
 class CW_loss(nn.Module):
-    def __init__(self, num_classes=10) -> None:
+    def __init__(self, num_classes=10, device='cuda:0') -> None:
         super().__init__()
         self.num_classes = num_classes
+        self.device = device
 
     def forward(self, logits_final, target):
         loss = self._cw_loss(logits_final, target, num_classes=self.num_classes)
@@ -102,7 +99,7 @@ class CW_loss(nn.Module):
     def _cw_loss(self, output, target, confidence=50, num_classes=10):
         target = target.data
         target_onehot = torch.zeros(target.size() + (num_classes,))
-        target_onehot = target_onehot.to(device)
+        target_onehot = target_onehot.to(self.device)
         target_onehot.scatter_(1, target.unsqueeze(1), 1.)
         target_var = Variable(target_onehot, requires_grad=False)
         real = (target_var * output).sum(1)
@@ -112,49 +109,38 @@ class CW_loss(nn.Module):
         return loss
 
 
-class Classifier(BaseModelDNN):
-    def __init__(self) -> None:
-        super(BaseModelDNN).__init__()
-        self.net = net(tau=args.tau, num_classes=num_classes, image_size=image_size).to(device)
-        self.set_requires_grad([self.net], False)
-
-    def load(self, args):
-        checkpoint = torch.load('./weights/{}/{}/{}.pth'.format(args.dataset, args.model, args.load_name), map_location=device)
-        self.net.load_state_dict(checkpoint)
-    
-    def predict(self, x, is_eval=True):
-        return self.net(x, is_eval=is_eval)
-
-# class TransferClassifier(BaseModelDNN):
-#     # Model for transfer learning, the backbone & FSR module might be trained on different datasets
-#     def __init__(self):
+# class Classifier(BaseModelDNN):
+#     def __init__(self) -> None:
 #         super(BaseModelDNN).__init__()
 #         self.net = net(tau=args.tau, num_classes=num_classes, image_size=image_size).to(device)
 #         self.set_requires_grad([self.net], False)
-        
+
 #     def load(self, args):
-#         print(f'Loading model with backbone: {args.backbone_weights} and FSR: {args.fsr_weights}')
-#         backbone_checkpoint = torch.load(args.backbone_weights, map_location=device)
-#         self.net.load_state_dict(backbone_checkpoint)
-        
-#         # Replace the FSR module
-#         fsr_checkpoint = torch.load(args.fsr_weights, map_location=device)
-#         fsr_state_dict = {
-#             k.replace('fsr.', ''): v
-#             for k, v in fsr_checkpoint.items()
-#             if k.startswith('fsr.')
-#         }
-
-#         self.net.fsr.load_state_dict(fsr_state_dict)
-
+#         checkpoint = torch.load('./weights/{}/{}/{}.pth'.format(args.dataset, args.model, args.load_name), map_location=device)
+#         self.net.load_state_dict(checkpoint)
+    
 #     def predict(self, x, is_eval=True):
 #         return self.net(x, is_eval=is_eval)
-        
-
 
 def main():
-    # model = Classifier()
-    model = TransferClassifier(args=args, num_classes=num_classes, image_size=image_size, net=net, device=device)
+    args = get_arguments()
+    logger, log_file = set_logger(args)
+    
+    device = 'cuda:{}'.format(args.device) if torch.cuda.is_available() else 'cpu'
+    nets = {
+        'resnet18': ResNet18_FSR,
+        'vgg16': vgg16_FSR,
+        'wideresnet34': WideResNet34_FSR,
+    }
+    net = nets[args.model]
+    dataset = available_datasets[args.dataset](args)
+    (num_classes, image_size,
+        trainloader, testloader, trainset, testset) = dataset.get_dataset()
+
+    if args.transfer_learning:
+        model = WholeClassifier(args=args, num_classes=num_classes, image_size=image_size, net=net, device=device)
+    else:
+        model = SeparateClassifier(args=args, num_classes=num_classes, image_size=image_size, net=net, device=device)
     model.load(args)
     model.net.eval()
 

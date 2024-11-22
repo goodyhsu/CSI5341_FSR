@@ -1,7 +1,7 @@
 import torch
 from .BaseModel import BaseModelDNN
 
-class TransferClassifier(BaseModelDNN):
+class SeparateClassifier(BaseModelDNN):
     # Model for transfer learning, the backbone & FSR module might be trained on different datasets
     def __init__(self, args, num_classes, image_size, net, device):
         super(BaseModelDNN).__init__()

@@ -6,7 +6,7 @@ import torch.backends.cudnn as cudnn
 from models.resnet_fsr import ResNet18_FSR
 from models.vgg_fsr import vgg16_FSR
 from models.wideresnet34_fsr import WideResNet34_FSR
-from models.TransferClassifier import TransferClassifier
+from models.SeparateClassifier import SeparateClassifier
 
 from attacks.pgd import PGD
 
@@ -64,11 +64,6 @@ dataset = available_datasets[args.dataset](args)
 (num_classes, image_size,
  trainloader, testloader, trainset, testset) = dataset.get_dataset()
 
-# models = {
-#     'resnet18': ResNet18_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
-#     'vgg16': vgg16_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
-#     'wideresnet34': WideResNet34_FSR(tau=args.tau, num_classes=num_classes, image_size=image_size),
-# }
 models = {
     'resnet18': ResNet18_FSR,
     'vgg16': vgg16_FSR,
@@ -80,7 +75,7 @@ net = models[model_name]
 
 # Transfer learning
 if args.transfer_learning:
-    classifier = TransferClassifier(args=args, num_classes=num_classes, image_size=image_size, net=net, device=device)
+    classifier = SeparateClassifier(args=args, num_classes=num_classes, image_size=image_size, net=net, device=device)
     classifier.load(args)
     classifier.set_requires_grad([classifier.net.tranfer_trainable_layer], True)
     net = classifier.net
