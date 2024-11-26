@@ -41,11 +41,11 @@ def get_arguments():
     parser.add_argument('--transfer_weights', type=str, help='path to transfer learning model weights')
     args = parser.parse_args()
     
-    if not args.transfer_learning:
-        assert args.backbone_weights is not None, 'Please provide the backbone weights for non-transfer learning'
-        assert args.fsr_weights is not None, 'Please provide the FSR weights for non-transfer learning'
-    else:
-        assert args.transfer_weights is not None, 'Please provide the transfer model weights for transfer learning'
+    # if not args.transfer_learning:
+    #     assert args.backbone_weights is not None, 'Please provide the backbone weights for non-transfer learning'
+    #     assert args.fsr_weights is not None, 'Please provide the FSR weights for non-transfer learning'
+    # else:
+    #     assert args.transfer_weights is not None, 'Please provide the transfer model weights for transfer learning'
     
     return args
 
@@ -53,7 +53,9 @@ def set_logger(args):
     if not os.path.exists('./logs/test'):
         os.makedirs('./logs/test')
     if args.transfer_learning:
-        log_file = f'./logs/test/trsf_{args.transfer_weights.split("/")[-1].split("_")[0]}.txt'
+        model_name = args.backbone_weights.split('/')[-1].split('.')[0]
+        log_file = f'./logs/test/{model_name}.txt'
+        # log_file = f'./logs/test/trsf_{args.transfer_weights.split("/")[-1].split("_")[0]}.txt'
     else:
         backbone_name = args.backbone_weights.split('/')[-1].split('_')[0]
         fsr_name = args.fsr_weights.split('/')[-1].split('_')[0]
@@ -137,10 +139,11 @@ def main():
     (num_classes, image_size,
         trainloader, testloader, trainset, testset) = dataset.get_dataset()
 
-    if args.transfer_learning:
-        model = WholeClassifier(args=args, num_classes=num_classes, image_size=image_size, net=net, device=device)
-    else:
-        model = SeparateClassifier(args=args, num_classes=num_classes, image_size=image_size, net=net, device=device)
+    model = SeparateClassifier(args=args, num_classes=num_classes, image_size=image_size, net=net, device=device)
+    # if args.transfer_learning:
+    #     model = WholeClassifier(args=args, num_classes=num_classes, image_size=image_size, net=net, device=device)
+    # else:
+    #     model = SeparateClassifier(args=args, num_classes=num_classes, image_size=image_size, net=net, device=device)
     model.load(args)
     model.net.eval()
 
@@ -160,7 +163,7 @@ def main():
             eps=8 / 255, nb_iter=100, eps_iter=0.1 * (8 / 255), rand_init=False,
             clip_min=0.0, clip_max=1.0, targeted=False), 'PGD-100'),
         (LinfPGDAttack, dict(
-            loss_fn=CW_loss(num_classes=num_classes),
+            loss_fn=CW_loss(num_classes=num_classes, device=device),
             eps=8 / 255, nb_iter=30, eps_iter=0.1 * (8 / 255), rand_init=False,
             clip_min=0.0, clip_max=1.0, targeted=False), 'C&W'),
     ]
